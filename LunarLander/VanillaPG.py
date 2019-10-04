@@ -5,6 +5,7 @@ import torch
 import torch.nn as nn
 import random
 from collections import namedtuple
+from torch.distributions import Categorical
 
 class VanillaPG(torch.nn.Module):
     # Linear Approximator
@@ -12,33 +13,35 @@ class VanillaPG(torch.nn.Module):
         super(VanillaPG, self).__init__()
 
         self.layer1 = torch.nn.Sequential(
-            torch.nn.Linear(input_dim, hidden_dim),
-            torch.nn.BatchNorm1d(hidden_dim),
-            torch.nn.PReLU()
+            nn.Linear(input_dim, hidden_dim),
+            nn.BatchNorm1d(hidden_dim),
+            nn.PReLU()
         )
 
         self.layer2 = torch.nn.Sequential(
-            torch.nn.Linear(hidden_dim, hidden_dim),
-            torch.nn.BatchNorm1d(hidden_dim),
-            torch.nn.PReLU()
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.BatchNorm1d(hidden_dim),
+            nn.PReLU()
         )
 
-        self.final = torch.nn.Linear(hidden_dim, output_dim)
+        self.final = torch.nn.Sequential(nn.Linear(hidden_dim, output_dim),
+                                         nn.Softmax(dim=-1)                    # keep probabilities positive
+                                         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.layer1(x)
         x = self.layer2(x)
-        x = self.final(x)
-
-        return x
+        action_probs = self.final(x)
+        action = Categorical(action_probs).sample().item()
+        return action, action_probs
 
 def states2torch(states) -> torch.Tensor:
     states = torch.tensor(states, dtype=torch.float32)
     states = torch.unsqueeze(states,0)
     return states
 
-Transition = namedtuple('Transition', ('state', 'action', 'mask', 'next_state',
-                                       'reward'))
+Transition = namedtuple('Transition', ('state', 'action', 'reward', 'done',
+                                       'next_state'))
 
 class Memory():
     def __init__(self):
@@ -86,7 +89,7 @@ class Main():
         train_start_time = time.time()
         for i_episode in range(self.num_episodes):
             trajectory = self.play_episode(self.max_timesteps)
-            print(trajectory)
+            print(trajectory.reward)
             break
         print('Done Training! Training Summary:')
         print('Total Time for Training (Minutes):' + str(time.time() - train_start_time))
@@ -97,10 +100,7 @@ class Main():
         mem = Memory()
         for t in range(max_timesteps):
             self.policy.train(mode=False)
-            print(state)
-            action = self.policy(states2torch(state))
-            action = action.cpu().data.numpy()
-            print(action)
+            action, action_probs = self.policy(states2torch(state))
             new_state, reward, done, _ = self.env.step(action)
             mem.push(state, action, reward, done, new_state)
             state = new_state
