@@ -36,14 +36,14 @@ class Game:
         self.lives = 0
     
     def step(self, action):
-        reward = 0.
+        reward = 0
         done = None
-        
         for i in range(4):
             obs, r, done, info = self.env.step(action)
+
             if i >= 2:
                 self.obs_2_max[i % 2] = self._process_obs(obs)
-
+                
             reward += r
             lives = self.env.unwrapped.ale.lives()
             if lives < self.lives:
@@ -231,7 +231,7 @@ class Main():
         self.epochs = 4
         
         # Number of worker processes
-        self.n_workers = 8
+        self.n_workers = 2
         
         # Number of steps to run on each process for a single update
         self.worker_steps = 128
@@ -273,7 +273,7 @@ class Main():
         
         for t in range(self.worker_steps):
             obs[:, t] = self.obs
-            
+
             # get actions from old policy for each worker
             pi, v = self.model(obs_to_torch(self.obs))
             values[:, t] = v.cpu().data.numpy()
@@ -290,8 +290,9 @@ class Main():
                 if info:
                     info['obs'] = obs[w, t, :, :, 3]
                     episode_infos.append(info)
-                    
+
         advantages = self._calc_advantages(dones, rewards, values)
+
         samples = {
             'obs': obs,
             'actions': actions,
